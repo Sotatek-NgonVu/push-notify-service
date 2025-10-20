@@ -1,0 +1,59 @@
+[package]
+name = "push-notify-service"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Database - MongoDB
+mongodb = { version = "3.2", features = ["tracing-unstable"] }
+bson = { version = "2.15", features = ["chrono-0_4"] }
+wither = { git = "https://github.com/sota-labs/wither.git", tag = "mongodb32" }
+wither_derive = { git = "https://github.com/sota-labs/wither.git", tag = "mongodb32" }
+
+# Basic utilities
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+serde_repr = { version = "0.1" }
+serde_with = { version = "3.14" }
+tokio = { version = "1.45", features = ["full"] }
+async-trait = "0.1.77"
+dotenvy = "0.15.0"
+reqwest = { version = "0.12.7", features = ["json"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Time handling
+chrono = { version = "0.4.23", features = ["serde"] }
+
+#Addition utilities
+axum = "0.8.4"
+axum-extra = { version = "0.10", features = ["typed-header", "cookie"] }
+
+# swagger
+utoipa = { version = "5.3", features = ["axum_extras", "chrono", "debug"] }
+utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
+utoipa-axum = { version = "0.2", features = ["debug"] }
+futures = "0.3.31"
+validator = { version = "0.20", features = ["derive"] }
+eyre = "0.6.12"
+clap = { version = "4.5.49", features = ["derive", "env"] }
+once_cell = "1.21.3"
+alloy = "1.0.41"
+thiserror = "2.0.17"
+rdkafka = "0.38.0"
+strum = { version = "0.27" }
+strum_macros = "0.27"
+http = "1.3.1"
+tower = "0.5.2"
+tower_governor = { version = "0.7", features = ["axum", "tracing"] }
+tower-http = { version = "0.6", features = ["full"] }
+uuid = { version = "1.18.1", features = ["v4"] }
+jsonwebtoken = { version = "9.3" }
+regex = { version = "1.11" }
+bytes = { version = "1.10" }
+http-body-util = { version = "0.1" }
+bb8 = { version = "0.9" }
+bb8-redis = { version = "0.24" }
+redis = { version = "0.32" }
