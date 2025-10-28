@@ -37,4 +37,42 @@ pub struct Config {
 
     #[clap(long, env)]
     pub redis_url: String,
+
+    #[clap(long, env)]
+    pub kafka_group_id: String,
+
+    #[clap(long, env)]
+    pub kafka_brokers: String,
+
+    #[clap(long, env)]
+    pub kafka_ssl_enabled: bool,
+
+    #[clap(long, env)]
+    pub kafka_sasl_username: String,
+
+    #[clap(long, env)]
+    pub kafka_sasl_password: String,
+
+    #[clap(long, env)]
+    pub enable_idempotence: bool,
+
+    #[clap(long, env)]
+    pub firebase_credentials_path: String,
+}
+
+use serde::Deserialize;
+
+fn default_enable_idempotence() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct KafkaConfig {
+    pub kafka_group_id: String,
+    pub kafka_brokers: String,
+    pub kafka_ssl_enabled: bool,
+    pub kafka_sasl_username: String,
+    pub kafka_sasl_password: String,
+    #[serde(default = "default_enable_idempotence")]
+    pub enable_idempotence: bool,
 }

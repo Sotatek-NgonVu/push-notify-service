@@ -25,7 +25,7 @@ impl RedisService {
             .await
     }
 
-    async fn get_cache<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<T, Error> {
+    pub async fn get_cache<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<T, Error> {
         let mut conn = self.pool.get().await?;
 
         let value: String = conn.get(key).await?;

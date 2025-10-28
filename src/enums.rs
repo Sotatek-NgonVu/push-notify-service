@@ -1,4 +1,6 @@
 use std::str::FromStr;
+use serde::{Deserialize, Serialize};
+use strum_macros::{EnumString, VariantNames, Display};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum EAvailableScope {
@@ -40,4 +42,27 @@ impl FromStr for EAvailableScope {
             _ => Err(format!("Invalid scope: {input}")),
         }
     }
+}
+
+
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    Copy,
+    EnumString,
+    VariantNames,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
+pub enum KafkaTopic {
+    #[strum(serialize = "raidenx.user.notify.persister")]
+    UserNotificationPersister,
+    #[strum(serialize = "raidenx.user.notify.publisher")]
+    UserNotificationPublisher,
 }

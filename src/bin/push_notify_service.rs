@@ -4,7 +4,7 @@ use push_notify_service::{app, config::APP_CONFIG, utils::tracing::init_standard
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    dotenvy::from_filename(concat!(env!("CARGO_MANIFEST_DIR"), "/.env")).ok();
+    dotenvy::dotenv().ok();
     init_standard_tracing(env!("CARGO_CRATE_NAME"));
 
     let app = app::create_app().await.unwrap();
