@@ -4,13 +4,46 @@ use utoipa::openapi::security::HttpAuthScheme;
 use utoipa::openapi::security::HttpBuilder;
 use utoipa::openapi::security::SecurityScheme;
 
+use crate::routes::account::dtos::requests::{
+    CreateUserFcmTokenRequestDto, DeactivateUserFcmTokenRequestDto, UserFcmTokenStatus,
+};
+use crate::routes::notification::dto::{
+    EditNotifPreferenceRequestDto, MarkNotificationAsReadResponseDto, NotifPreferenceResponseDto,
+    NotificationDto,
+};
+use crate::utils::pagination::PaginationResponseDto;
+use crate::utils::structs::NotificationPreferences;
+
 #[derive(OpenApi)]
 #[openapi(
     modifiers(&SecurityModifier),
     servers(
-    (url = "/"),
-    (url = "https://api.raidenx.io"),
+        (url = "/"),
+        (url = "https://api.raidenx.io"),
     ),
+    components(
+        schemas(
+            // Account DTOs
+            CreateUserFcmTokenRequestDto,
+            DeactivateUserFcmTokenRequestDto,
+            UserFcmTokenStatus,
+            
+            // Notification DTOs
+            NotificationDto,
+            MarkNotificationAsReadResponseDto,
+            NotifPreferenceResponseDto,
+            EditNotifPreferenceRequestDto,
+            NotificationPreferences,
+            
+            // Pagination
+            PaginationResponseDto<NotificationDto>,
+        )
+    ),
+    tags(
+        (name = "Account APIs", description = "Account and FCM token management endpoints"),
+        (name = "Notification APIs", description = "Notification management endpoints"),
+        (name = "Health", description = "Health check endpoints"),
+    )
 )]
 pub struct ApiDoc;
 
