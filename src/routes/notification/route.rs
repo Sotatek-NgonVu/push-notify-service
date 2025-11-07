@@ -54,8 +54,15 @@ pub async fn mark_notification_as_read(
     JwtAuth(claims): JwtAuth,
     Path(notif_id): Path<String>,
 ) -> Result<Json<MarkNotificationAsReadResponseDto>, Error> {
+    if notif_id.is_empty() {
+        return Err(Error::bad_request("Notification ID cannot be empty"));
+    }
+    if notif_id.len() != 24 {
+        return Err(Error::bad_request("Notification ID must be 24 characters"));
+    }
+
     let oid = ObjectId::parse_str(&notif_id)
-        .map_err(|_| Error::bad_request("Invalid notification ID"))?;
+        .map_err(|_| Error::bad_request("Invalid notification ID format"))?;
 
     let filter = doc! {
         "_id": oid,
@@ -77,7 +84,9 @@ pub async fn mark_notification_as_read(
     tracing::info!("User {} marked notification {} as read.", claims.user_id, notif_id);
 
     Ok(Json(MarkNotificationAsReadResponseDto {
-        notification_id: updated.id.unwrap().to_hex(),
+        notification_id: updated.id
+            .ok_or_else(|| Error::internal_err("Notification ID is missing"))?
+            .to_hex(),
         is_read: updated.is_read,
     }))
 }
@@ -200,7 +209,9 @@ pub async fn get_latest_unread_transaction_notification(
                 claims.user_id
             );
             Ok(Json(Some(NotificationDto {
-                id: notif.id.unwrap().to_hex(),
+                id: notif.id
+                    .ok_or_else(|| Error::internal_err("Notification ID is missing"))?
+                    .to_hex(),
                 user_id: notif.user_id,
                 title: notif.title,
                 content: notif.message,
@@ -253,7 +264,9 @@ pub async fn get_latest_unread_account_notification(
                 claims.user_id
             );
             Ok(Json(Some(NotificationDto {
-                id: notif.id.unwrap().to_hex(),
+                id: notif.id
+                    .ok_or_else(|| Error::internal_err("Notification ID is missing"))?
+                    .to_hex(),
                 user_id: notif.user_id,
                 title: notif.title,
                 content: notif.message,
@@ -306,17 +319,23 @@ pub async fn get_account_notification(
         .await
         .map_err(|e| Error::internal_err(&format!("Failed to count notifications: {}", e)))?;
 
-    let response = notifications
+    let response: Result<Vec<NotificationDto>, Error> = notifications
         .iter()
-        .map(|notif| NotificationDto {
-            id: notif.id.as_ref().unwrap().to_hex(),
-            user_id: notif.user_id.clone(),
-            title: notif.title.clone(),
-            content: notif.message.clone(),
-            is_read: notif.is_read,
-            created_at: notif.created_at.to_string(),
+        .map(|notif| {
+            Ok(NotificationDto {
+                id: notif.id
+                    .as_ref()
+                    .ok_or_else(|| Error::internal_err("Notification ID is missing"))?
+                    .to_hex(),
+                user_id: notif.user_id.clone(),
+                title: notif.title.clone(),
+                content: notif.message.clone(),
+                is_read: notif.is_read,
+                created_at: notif.created_at.to_string(),
+            })
         })
-        .collect::<Vec<_>>();
+        .collect();
+    let response = response?;
 
     let total_pages = (total as f64 / pagination.limit() as f64).ceil() as u32;
 
@@ -367,17 +386,23 @@ pub async fn get_transaction_notification(
         .await
         .map_err(|e| Error::internal_err(&format!("Failed to count notifications: {}", e)))?;
 
-    let response = notifications
+    let response: Result<Vec<NotificationDto>, Error> = notifications
         .iter()
-        .map(|notif| NotificationDto {
-            id: notif.id.as_ref().unwrap().to_hex(),
-            user_id: notif.user_id.clone(),
-            title: notif.title.clone(),
-            content: notif.message.clone(),
-            is_read: notif.is_read,
-            created_at: notif.created_at.to_string(),
+        .map(|notif| {
+            Ok(NotificationDto {
+                id: notif.id
+                    .as_ref()
+                    .ok_or_else(|| Error::internal_err("Notification ID is missing"))?
+                    .to_hex(),
+                user_id: notif.user_id.clone(),
+                title: notif.title.clone(),
+                content: notif.message.clone(),
+                is_read: notif.is_read,
+                created_at: notif.created_at.to_string(),
+            })
         })
-        .collect::<Vec<_>>();
+        .collect();
+    let response = response?;
 
     let total_pages = (total as f64 / pagination.limit() as f64).ceil() as u32;
 
@@ -412,6 +437,12 @@ pub async fn update_notification_preference(
     JwtAuth(claims): JwtAuth,
     Json(request): Json<EditNotifPreferenceRequestDto>,
 ) -> Result<Json<NotifPreferenceResponseDto>, Error> {
+    // Input validation
+    // Validate user_id is not empty
+    if claims.user_id.is_empty() {
+        return Err(Error::bad_request("User ID cannot be empty"));
+    }
+
     let filter = doc! {
         "userId": &claims.user_id,
     };

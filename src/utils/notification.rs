@@ -1,5 +1,5 @@
-use std::collections::HashMap;
-use crate::loading_preferences::get_user_notification_preferences;
+use std::collections::{HashMap, HashSet};
+use crate::loading_preferences::get_user_notification_preferences_batch;
 use crate::utils::structs::{NotifMessage, NotifType};
 use crate::errors::Error;
 
@@ -20,6 +20,15 @@ pub async fn group_by_user_id(
 ) -> Result<HashMap<NotifKey, Vec<NotificationWithTimestamp>>, Error> {
     notif_message.sort_by_key(|m| m.timestamp);
 
+    let unique_user_ids: HashSet<String> = notif_message.iter()
+        .map(|n| n.user_id.clone())
+        .collect();
+    let user_ids_vec: Vec<String> = unique_user_ids.into_iter().collect();
+    
+    let preferences_map = get_user_notification_preferences_batch(user_ids_vec)
+        .await
+        .map_err(|e| Error::internal_err(&format!("Failed to batch load preferences: {}", e)))?;
+
     let mut grouped: HashMap<NotifKey, Vec<NotificationWithTimestamp>> = HashMap::new();
     for notif in notif_message {
         let user_id = notif.user_id;
@@ -30,15 +39,19 @@ pub async fn group_by_user_id(
             second: timestamp / 1000,
             r#type: notif_type,
         };
-        let preference = match get_user_notification_preferences(user_id.clone()).await {
-            Ok(preference) => preference,
-            Err(e) => {
-                tracing::warn!("Failed to get notification preferences for user {user_id}: {e}");
-                continue;
-            }
-        };
 
-        // Log preferences for debugging
+        let preference = preferences_map.get(&user_id)
+            .copied()
+            .unwrap_or_else(|| {
+                tracing::warn!("Preferences not found for user {}, using defaults", user_id);
+                crate::utils::structs::NotificationPreferences {
+                    announcement: true,
+                    account: true,
+                    campaign: true,
+                    transaction: true,
+                }
+            });
+
         tracing::debug!(
             "User {} preferences: transaction={}, account={}, announcement={}, campaign={}, checking type={:?}",
             user_id,

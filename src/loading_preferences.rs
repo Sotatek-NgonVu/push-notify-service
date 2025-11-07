@@ -58,7 +58,8 @@ pub async fn get_user_notification_preferences(
             tracing::debug!("Found preferences in Redis cache for user {}", user_id);
             let mut map = USER_NOTIF_PREFERENCES.write().await;
             map.insert(user_id.clone(), preferences);
-            return Ok(*map.get(&user_id).unwrap());
+            return Ok(*map.get(&user_id)
+                .ok_or_else(|| anyhow::anyhow!("Failed to retrieve preferences after insertion"))?);
         }
         Ok(None) => {
             tracing::debug!("Preferences not found in Redis cache for user {}, querying DB", user_id);
@@ -110,9 +111,91 @@ pub async fn get_user_notification_preferences(
 
     let mut map = USER_NOTIF_PREFERENCES.write().await;
     map.insert(user_id.clone(), preferences);
-    let result = *map.get(&user_id).unwrap();
+    let result = *map.get(&user_id)
+        .ok_or_else(|| anyhow::anyhow!("Failed to retrieve preferences after insertion"))?;
 
     tracing::debug!("Loaded preferences from DB for user {} and updated cache", user_id);
+    Ok(result)
+}
+
+pub async fn get_user_notification_preferences_batch(
+    user_ids: Vec<String>,
+) -> anyhow::Result<HashMap<String, NotificationPreferences>> {
+    let redis_service = RedisService::new().await;
+    let mut result: HashMap<String, NotificationPreferences> = HashMap::new();
+    let mut missing_user_ids = Vec::new();
+    
+    for user_id in &user_ids {
+        let redis_key = get_redis_preference_key(user_id);
+        match redis_service.get_cache_opt::<NotificationPreferences>(&redis_key).await {
+            Ok(Some(preferences)) => {
+                result.insert(user_id.clone(), preferences);
+            }
+            _ => {
+                missing_user_ids.push(user_id.clone());
+            }
+        }
+    }
+    
+    let mut db_query_user_ids = Vec::new();
+    {
+        let map = USER_NOTIF_PREFERENCES.read().await;
+        for user_id in &missing_user_ids {
+            if let Some(preferences) = map.get(user_id) {
+                result.insert(user_id.clone(), *preferences);
+            } else {
+                db_query_user_ids.push(user_id.clone());
+            }
+        }
+    }
+    
+    if !db_query_user_ids.is_empty() {
+        let query = doc! {
+            "userId": { "$in": db_query_user_ids.clone() }
+        };
+        
+        match UserNotificationSetting::find(query, None).await {
+            Ok(settings) => {
+                let mut map = USER_NOTIF_PREFERENCES.write().await;
+                for setting in settings {
+                    let preferences = NotificationPreferences {
+                        announcement: setting.announcement,
+                        account: setting.account,
+                        campaign: setting.campaign,
+                        transaction: setting.transaction,
+                    };
+                    result.insert(setting.user_id.clone(), preferences);
+                    map.insert(setting.user_id.clone(), preferences);
+                    
+                    // Update Redis cache
+                    let redis_key = get_redis_preference_key(&setting.user_id);
+                    let redis_key_clone = redis_key.clone();
+                    let preferences_clone = preferences;
+                    tokio::spawn(async move {
+                        if let Err(e) = redis_service.set_ex_cache(&redis_key_clone, &preferences_clone, PREFERENCE_CACHE_TTL).await {
+                            tracing::warn!("Failed to update Redis cache for user preferences: {e}");
+                        }
+                    });
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to batch fetch preferences from DB: {e}");
+            }
+        }
+        
+        for user_id in &db_query_user_ids {
+            if !result.contains_key(user_id) {
+                let default_prefs = NotificationPreferences {
+                    announcement: true,
+                    account: true,
+                    campaign: true,
+                    transaction: true,
+                };
+                result.insert(user_id.clone(), default_prefs);
+            }
+        }
+    }
+
     Ok(result)
 }
 

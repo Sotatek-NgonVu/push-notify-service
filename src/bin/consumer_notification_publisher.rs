@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use push_notify_service::common::{DeserializerType, MessageWithOffset};
@@ -14,6 +15,7 @@ use push_notify_service::utils::structs::{NotifMessage, OrderNotifBuilder};
 use push_notify_service::utils::tracing::init_standard_tracing;
 use push_notify_service::errors::Error;
 use push_notify_service::utils::notification::{group_by_user_id, NotifKey, NotificationWithTimestamp};
+use tokio_retry::{strategy::ExponentialBackoff, Retry};
 
 const NOTIFICATION_KEY_PREFIX: &str = "raidenx:notification";
 const RATE_LIMIT_DURATION: usize = 2; // 2 second
@@ -21,8 +23,14 @@ const UNSENT_COUNT_DURATION: usize = 60 * 60 * 24; // 24 hours
 
 static FCM_CLIENT: LazyLock<fcm_notification::FcmNotification> = LazyLock::new(|| {
     fcm_notification::FcmNotification::new(APP_CONFIG.firebase_credentials_path.as_str())
-        .expect("Failed to create FCM client.")
+        .unwrap_or_else(|e| {
+            tracing::error!("Failed to create FCM client: {e}");
+            std::process::exit(1);
+        })
 });
+
+const FCM_RETRY_ATTEMPTS: usize = 3;
+const FCM_RETRY_INITIAL_DELAY_MS: u64 = 100;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -115,9 +123,10 @@ async fn process(grouped_notifications: HashMap<NotifKey, Vec<NotificationWithTi
             })
             .collect::<Vec<OrderNotifBuilder>>();
 
-        if !notif_data.is_empty() {
-            let last_notif = notif_data.last().unwrap();
-            push_notification_to_firebase(title, last_notif).await?;
+        if let Some(last_notif) = notif_data.last() {
+            if let Err(e) = push_notification_to_firebase(title, last_notif).await {
+                tracing::error!("Failed to push notification for user {}: {e}", key.user_id);
+            }
         }
     }
 
@@ -152,15 +161,31 @@ async fn push_notification_to_firebase(
             } else {
                 (title.clone(), notif.message.clone())
             };
+            
+            let retry_strategy = ExponentialBackoff::from_millis(FCM_RETRY_INITIAL_DELAY_MS)
+                .max_delay(Duration::from_secs(5))
+                .take(FCM_RETRY_ATTEMPTS);
+            
+            let token_clone = token.clone();
+            let title_clone = title_str.clone();
+            let message_clone = message_str.clone();
 
-            let notification = fcm_notification::NotificationPayload {
-                token: token.as_str(),
-                title: title_str.as_str(),
-                body: message_str.as_str(),
-                data: None,
-            };
+            let send_result = Retry::spawn(retry_strategy, || {
+                let token = token_clone.clone();
+                let title = title_clone.clone();
+                let message = message_clone.clone();
+                async move {
+                    let notification = fcm_notification::NotificationPayload {
+                        token: token.as_str(),
+                        title: title.as_str(),
+                        body: message.as_str(),
+                        data: None,
+                    };
+                    FCM_CLIENT.send_notification(&notification).await
+                }
+            }).await;
 
-            match FCM_CLIENT.send_notification(&notification).await {
+            match send_result {
                 Ok(_) => {
                     if let Err(e) = update_last_sent(token.clone()).await {
                         tracing::warn!(
@@ -174,12 +199,15 @@ async fn push_notification_to_firebase(
                             notif.user_id
                         );
                     }
+                    tracing::info!("Notification sent successfully for user ID {}", notif.user_id);
                 }
                 Err(e) => {
                     tracing::error!(
-                        "Failed to send notification to user ID {}: {e}",
-                        notif.user_id
+                        "Failed to send notification to user ID {} after {} retries: {e}",
+                        notif.user_id,
+                        FCM_RETRY_ATTEMPTS
                     );
+                    // Could add dead letter queue here in the future
                 }
             }
 
