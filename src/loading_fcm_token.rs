@@ -1,13 +1,13 @@
-use std::collections::HashMap;
-use std::sync::LazyLock;
-use bson::doc;
-use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
 use crate::core::cache::redis_emitter::get_redis_emitter;
+use crate::enums::UserFcmTokenStatus;
 use crate::errors::Error;
 use crate::models::user_fcm_token::UserFcmToken;
-use crate::enums::UserFcmTokenStatus;
 use crate::utils::models::ModelExt;
+use bson::doc;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::LazyLock;
+use tokio::sync::RwLock;
 
 static USER_FCM_TOKENS: LazyLock<RwLock<HashMap<String, Vec<String>>>> =
     LazyLock::new(|| RwLock::new(HashMap::with_capacity(100_000)));
@@ -69,7 +69,9 @@ pub async fn get_user_fcm_tokens(user_id: String) -> Result<Vec<String>, Error> 
             for token in tokens {
                 if token.status == UserFcmTokenStatus::Active.to_string() {
                     let fcm_token = token.token.clone();
-                    map.entry(user_id.clone()).or_default().push(fcm_token.clone());
+                    map.entry(user_id.clone())
+                        .or_default()
+                        .push(fcm_token.clone());
                     result.push(fcm_token);
                 }
             }

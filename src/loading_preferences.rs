@@ -1,11 +1,11 @@
+use crate::core::cache::redis_service::RedisService;
+use crate::models::user_notification_settings::UserNotificationSetting;
+use crate::utils::models::ModelExt;
+use crate::utils::structs::NotificationPreferences;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 use tokio::sync::RwLock;
-use crate::models::user_notification_settings::UserNotificationSetting;
 use wither::bson::doc;
-use crate::utils::models::ModelExt;
-use crate::utils::structs::NotificationPreferences;
-use crate::core::cache::redis_service::RedisService;
 
 static USER_NOTIF_PREFERENCES: LazyLock<RwLock<HashMap<String, NotificationPreferences>>> =
     LazyLock::new(|| RwLock::new(HashMap::with_capacity(100_000)));
@@ -53,35 +53,44 @@ pub async fn get_user_notification_preferences(
     let redis_key = get_redis_preference_key(&user_id);
     let redis_service = RedisService::new().await;
 
-    match redis_service.get_cache_opt::<NotificationPreferences>(&redis_key).await {
+    match redis_service
+        .get_cache_opt::<NotificationPreferences>(&redis_key)
+        .await
+    {
         Ok(Some(preferences)) => {
             tracing::debug!("Found preferences in Redis cache for user {}", user_id);
             let mut map = USER_NOTIF_PREFERENCES.write().await;
             map.insert(user_id.clone(), preferences);
-            return Ok(*map.get(&user_id)
-                .ok_or_else(|| anyhow::anyhow!("Failed to retrieve preferences after insertion"))?);
+            return Ok(*map.get(&user_id).ok_or_else(|| {
+                anyhow::anyhow!("Failed to retrieve preferences after insertion")
+            })?);
         }
         Ok(None) => {
-            tracing::debug!("Preferences not found in Redis cache for user {}, querying DB", user_id);
+            tracing::debug!(
+                "Preferences not found in Redis cache for user {}, querying DB",
+                user_id
+            );
         }
         Err(e) => {
-            tracing::warn!("Failed to get preferences from Redis for user {}: {e}, falling back to DB", user_id);
+            tracing::warn!(
+                "Failed to get preferences from Redis for user {}: {e}, falling back to DB",
+                user_id
+            );
         }
     }
 
-    {
+    if let Some(preferences) = {
         let map = USER_NOTIF_PREFERENCES.read().await;
-        if let Some(preferences) = map.get(&user_id) {
-            tracing::debug!("Found preferences in memory cache for user {}", user_id);
-            let redis_key_clone = redis_key.clone();
-            let preferences_clone = *preferences;
-            tokio::spawn(async move {
-                if let Err(e) = redis_service.set_ex_cache(&redis_key_clone, &preferences_clone, PREFERENCE_CACHE_TTL).await {
-                    tracing::warn!("Failed to update Redis cache for user preferences: {e}");
-                }
-            });
-            return Ok(*preferences);
+        map.get(&user_id).copied()
+    } {
+        tracing::debug!("Found preferences in memory cache for user {}", user_id);
+        if let Err(e) = redis_service
+            .set_ex_cache(&redis_key, &preferences, PREFERENCE_CACHE_TTL)
+            .await
+        {
+            tracing::warn!("Failed to update Redis cache for user preferences: {e}");
         }
+        return Ok(preferences);
     }
 
     let query = doc! { "userId": user_id.clone() };
@@ -105,16 +114,26 @@ pub async fn get_user_notification_preferences(
         }
     };
 
-    if let Err(e) = redis_service.set_ex_cache(&redis_key, &preferences, PREFERENCE_CACHE_TTL).await {
-        tracing::warn!("Failed to update Redis cache for user {} preferences: {e}", user_id);
+    if let Err(e) = redis_service
+        .set_ex_cache(&redis_key, &preferences, PREFERENCE_CACHE_TTL)
+        .await
+    {
+        tracing::warn!(
+            "Failed to update Redis cache for user {} preferences: {e}",
+            user_id
+        );
     }
 
     let mut map = USER_NOTIF_PREFERENCES.write().await;
     map.insert(user_id.clone(), preferences);
-    let result = *map.get(&user_id)
+    let result = *map
+        .get(&user_id)
         .ok_or_else(|| anyhow::anyhow!("Failed to retrieve preferences after insertion"))?;
 
-    tracing::debug!("Loaded preferences from DB for user {} and updated cache", user_id);
+    tracing::debug!(
+        "Loaded preferences from DB for user {} and updated cache",
+        user_id
+    );
     Ok(result)
 }
 
@@ -124,39 +143,51 @@ pub async fn get_user_notification_preferences_batch(
     let redis_service = RedisService::new().await;
     let mut result: HashMap<String, NotificationPreferences> = HashMap::new();
     let mut missing_user_ids = Vec::new();
-    
+
     for user_id in &user_ids {
         let redis_key = get_redis_preference_key(user_id);
-        match redis_service.get_cache_opt::<NotificationPreferences>(&redis_key).await {
+        match redis_service
+            .get_cache_opt::<NotificationPreferences>(&redis_key)
+            .await
+        {
             Ok(Some(preferences)) => {
                 result.insert(user_id.clone(), preferences);
             }
-            _ => {
+            Ok(None) => missing_user_ids.push(user_id.clone()),
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to get preferences from Redis for user {}: {e}",
+                    user_id
+                );
                 missing_user_ids.push(user_id.clone());
             }
         }
     }
-    
+
+    let mut redis_updates: Vec<(String, NotificationPreferences)> = Vec::new();
     let mut db_query_user_ids = Vec::new();
+
     {
         let map = USER_NOTIF_PREFERENCES.read().await;
         for user_id in &missing_user_ids {
             if let Some(preferences) = map.get(user_id) {
                 result.insert(user_id.clone(), *preferences);
+                redis_updates.push((user_id.clone(), *preferences));
             } else {
                 db_query_user_ids.push(user_id.clone());
             }
         }
     }
-    
+
+    let mut fetched_preferences: Vec<(String, NotificationPreferences)> = Vec::new();
+
     if !db_query_user_ids.is_empty() {
         let query = doc! {
-            "userId": { "$in": db_query_user_ids.clone() }
+            "userId": { "$in": &db_query_user_ids }
         };
-        
+
         match UserNotificationSetting::find(query, None).await {
             Ok(settings) => {
-                let mut map = USER_NOTIF_PREFERENCES.write().await;
                 for setting in settings {
                     let preferences = NotificationPreferences {
                         announcement: setting.announcement,
@@ -165,26 +196,16 @@ pub async fn get_user_notification_preferences_batch(
                         transaction: setting.transaction,
                     };
                     result.insert(setting.user_id.clone(), preferences);
-                    map.insert(setting.user_id.clone(), preferences);
-                    
-                    // Update Redis cache
-                    let redis_key = get_redis_preference_key(&setting.user_id);
-                    let redis_key_clone = redis_key.clone();
-                    let preferences_clone = preferences;
-                    tokio::spawn(async move {
-                        if let Err(e) = redis_service.set_ex_cache(&redis_key_clone, &preferences_clone, PREFERENCE_CACHE_TTL).await {
-                            tracing::warn!("Failed to update Redis cache for user preferences: {e}");
-                        }
-                    });
+                    fetched_preferences.push((setting.user_id, preferences));
                 }
             }
             Err(e) => {
                 tracing::warn!("Failed to batch fetch preferences from DB: {e}");
             }
         }
-        
-        for user_id in &db_query_user_ids {
-            if !result.contains_key(user_id) {
+
+        for user_id in db_query_user_ids {
+            if !result.contains_key(&user_id) {
                 let default_prefs = NotificationPreferences {
                     announcement: true,
                     account: true,
@@ -192,8 +213,25 @@ pub async fn get_user_notification_preferences_batch(
                     transaction: true,
                 };
                 result.insert(user_id.clone(), default_prefs);
+                fetched_preferences.push((user_id, default_prefs));
             }
         }
+    }
+
+    if !fetched_preferences.is_empty() {
+        let mut map = USER_NOTIF_PREFERENCES.write().await;
+        for (user_id, preferences) in &fetched_preferences {
+            map.insert(user_id.clone(), *preferences);
+        }
+    }
+
+    redis_updates.extend(fetched_preferences);
+
+    if let Err(e) = redis_service
+        .set_ex_cache_batch(&redis_updates, PREFERENCE_CACHE_TTL)
+        .await
+    {
+        tracing::warn!("Failed to batch update Redis cache for preferences: {e}");
     }
 
     Ok(result)
@@ -212,8 +250,14 @@ pub async fn update_user_notification_preferences(
 
     let redis_key = get_redis_preference_key(&user_id);
     let redis_service = RedisService::new().await;
-    if let Err(e) = redis_service.set_ex_cache(&redis_key, &preferences, PREFERENCE_CACHE_TTL).await {
-        tracing::warn!("Failed to update Redis cache for user {} preferences: {e}", user_id);
+    if let Err(e) = redis_service
+        .set_ex_cache(&redis_key, &preferences, PREFERENCE_CACHE_TTL)
+        .await
+    {
+        tracing::warn!(
+            "Failed to update Redis cache for user {} preferences: {e}",
+            user_id
+        );
     }
 
     let mut map = USER_NOTIF_PREFERENCES.write().await;

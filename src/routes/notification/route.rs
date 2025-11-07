@@ -1,24 +1,24 @@
 use axum::{
-    extract::{Path, Query},
     Json,
+    extract::{Path, Query},
 };
-use wither::bson::{doc, oid::ObjectId, DateTime};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
+use wither::bson::{DateTime, doc, oid::ObjectId};
 
 use crate::app_state::AppState;
 use crate::core::jwt_auth::jwt_auth::JwtAuth;
 use crate::errors::Error;
-use crate::models::user_notifications::UserNotification;
+use crate::loading_preferences::update_user_notification_preferences;
 use crate::models::user_notification_settings::UserNotificationSetting;
+use crate::models::user_notifications::UserNotification;
 use crate::routes::notification::dto::{
     EditNotifPreferenceRequestDto, MarkNotificationAsReadResponseDto, NotifPreferenceResponseDto,
     NotificationDto,
 };
+use crate::utils::models::ModelExt;
 use crate::utils::pagination::{PaginationQuery, PaginationResponseDto};
 use crate::utils::structs::{NotifType, NotificationPreferences};
-use crate::utils::models::ModelExt;
-use crate::loading_preferences::update_user_notification_preferences;
 
 pub fn create_route() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
@@ -81,10 +81,15 @@ pub async fn mark_notification_as_read(
         .map_err(|e| Error::internal_err(&format!("Failed to update notification: {}", e)))?
         .ok_or_else(|| Error::not_found("Notification not found"))?;
 
-    tracing::info!("User {} marked notification {} as read.", claims.user_id, notif_id);
+    tracing::info!(
+        "User {} marked notification {} as read.",
+        claims.user_id,
+        notif_id
+    );
 
     Ok(Json(MarkNotificationAsReadResponseDto {
-        notification_id: updated.id
+        notification_id: updated
+            .id
             .ok_or_else(|| Error::internal_err("Notification ID is missing"))?
             .to_hex(),
         is_read: updated.is_read,
@@ -146,9 +151,7 @@ pub async fn mark_all_transaction_notify_as_read(
         ("bearer_auth" = [])
     )
 )]
-pub async fn mark_all_account_notify_as_read(
-    JwtAuth(claims): JwtAuth,
-) -> Result<Json<()>, Error> {
+pub async fn mark_all_account_notify_as_read(JwtAuth(claims): JwtAuth) -> Result<Json<()>, Error> {
     let filter = doc! {
         "userId": &claims.user_id,
         "type": NotifType::Account.to_string(),
@@ -166,7 +169,10 @@ pub async fn mark_all_account_notify_as_read(
         .await
         .map_err(|e| Error::internal_err(&format!("Failed to update notifications: {}", e)))?;
 
-    tracing::info!("User {} marked all account notifications as read.", claims.user_id);
+    tracing::info!(
+        "User {} marked all account notifications as read.",
+        claims.user_id
+    );
 
     Ok(Json(()))
 }
@@ -209,7 +215,8 @@ pub async fn get_latest_unread_transaction_notification(
                 claims.user_id
             );
             Ok(Json(Some(NotificationDto {
-                id: notif.id
+                id: notif
+                    .id
                     .ok_or_else(|| Error::internal_err("Notification ID is missing"))?
                     .to_hex(),
                 user_id: notif.user_id,
@@ -220,7 +227,10 @@ pub async fn get_latest_unread_transaction_notification(
             })))
         }
         None => {
-            tracing::info!("User {} has no unread transaction notifications.", claims.user_id);
+            tracing::info!(
+                "User {} has no unread transaction notifications.",
+                claims.user_id
+            );
             Ok(Json(None))
         }
     }
@@ -259,12 +269,10 @@ pub async fn get_latest_unread_account_notification(
 
     match notification {
         Some(notif) => {
-            tracing::info!(
-                "User {} has unread account notification",
-                claims.user_id
-            );
+            tracing::info!("User {} has unread account notification", claims.user_id);
             Ok(Json(Some(NotificationDto {
-                id: notif.id
+                id: notif
+                    .id
                     .ok_or_else(|| Error::internal_err("Notification ID is missing"))?
                     .to_hex(),
                 user_id: notif.user_id,
@@ -275,7 +283,10 @@ pub async fn get_latest_unread_account_notification(
             })))
         }
         None => {
-            tracing::info!("User {} has no unread account notifications.", claims.user_id);
+            tracing::info!(
+                "User {} has no unread account notifications.",
+                claims.user_id
+            );
             Ok(Json(None))
         }
     }
@@ -323,7 +334,8 @@ pub async fn get_account_notification(
         .iter()
         .map(|notif| {
             Ok(NotificationDto {
-                id: notif.id
+                id: notif
+                    .id
                     .as_ref()
                     .ok_or_else(|| Error::internal_err("Notification ID is missing"))?
                     .to_hex(),
@@ -390,7 +402,8 @@ pub async fn get_transaction_notification(
         .iter()
         .map(|notif| {
             Ok(NotificationDto {
-                id: notif.id
+                id: notif
+                    .id
                     .as_ref()
                     .ok_or_else(|| Error::internal_err("Notification ID is missing"))?
                     .to_hex(),

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use strum::{EnumString};
+use strum::EnumString;
 use strum_macros::VariantNames;
 
 #[derive(

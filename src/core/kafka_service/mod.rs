@@ -1,2 +1,2 @@
-pub mod producer;
 pub mod consumers;
+pub mod producer;

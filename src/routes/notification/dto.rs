@@ -1,6 +1,6 @@
+use crate::utils::structs::NotificationPreferences;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use crate::utils::structs::NotificationPreferences;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]

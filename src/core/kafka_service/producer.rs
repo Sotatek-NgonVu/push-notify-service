@@ -1,15 +1,15 @@
+use crate::config::KafkaConfig;
 use anyhow::Error;
 use futures::StreamExt;
 use once_cell::sync::OnceCell;
 use rdkafka::{
-    producer::{FutureProducer, FutureRecord},
     ClientConfig,
+    producer::{FutureProducer, FutureRecord},
 };
 use rmp_serde::Serializer;
 use serde::Serialize;
 use std::time::Duration;
 use tokio::time::Instant;
-use crate::config::KafkaConfig;
 
 pub static KAFKA_PRODUCER: OnceCell<FutureProducer> = OnceCell::new();
 

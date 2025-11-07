@@ -1,7 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use crate::errors::Error;
 use crate::loading_preferences::get_user_notification_preferences_batch;
 use crate::utils::structs::{NotifMessage, NotifType};
-use crate::errors::Error;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Eq, Hash, PartialEq, Debug)]
 pub struct NotifKey {
@@ -20,11 +20,10 @@ pub async fn group_by_user_id(
 ) -> Result<HashMap<NotifKey, Vec<NotificationWithTimestamp>>, Error> {
     notif_message.sort_by_key(|m| m.timestamp);
 
-    let unique_user_ids: HashSet<String> = notif_message.iter()
-        .map(|n| n.user_id.clone())
-        .collect();
+    let unique_user_ids: HashSet<String> =
+        notif_message.iter().map(|n| n.user_id.clone()).collect();
     let user_ids_vec: Vec<String> = unique_user_ids.into_iter().collect();
-    
+
     let preferences_map = get_user_notification_preferences_batch(user_ids_vec)
         .await
         .map_err(|e| Error::internal_err(&format!("Failed to batch load preferences: {}", e)))?;
@@ -40,17 +39,15 @@ pub async fn group_by_user_id(
             r#type: notif_type,
         };
 
-        let preference = preferences_map.get(&user_id)
-            .copied()
-            .unwrap_or_else(|| {
-                tracing::warn!("Preferences not found for user {}, using defaults", user_id);
-                crate::utils::structs::NotificationPreferences {
-                    announcement: true,
-                    account: true,
-                    campaign: true,
-                    transaction: true,
-                }
-            });
+        let preference = preferences_map.get(&user_id).copied().unwrap_or_else(|| {
+            tracing::warn!("Preferences not found for user {}, using defaults", user_id);
+            crate::utils::structs::NotificationPreferences {
+                announcement: true,
+                account: true,
+                campaign: true,
+                transaction: true,
+            }
+        });
 
         tracing::debug!(
             "User {} preferences: transaction={}, account={}, announcement={}, campaign={}, checking type={:?}",
@@ -76,10 +73,10 @@ pub async fn group_by_user_id(
                 notif_type,
                 user_id
             );
-            grouped.entry(key).or_default().push(NotificationWithTimestamp {
-                message,
-                timestamp,
-            });
+            grouped
+                .entry(key)
+                .or_default()
+                .push(NotificationWithTimestamp { message, timestamp });
         } else {
             tracing::info!(
                 "Notification type {:?} is DISABLED for user {}, skipping notification",

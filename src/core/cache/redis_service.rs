@@ -1,6 +1,6 @@
 use bb8::Pool;
 use bb8_redis::RedisConnectionManager;
-use bb8_redis::redis::AsyncCommands;
+use bb8_redis::redis::{self, AsyncCommands};
 use eyre::Error;
 use tokio::sync::OnceCell as AsyncOnceCell;
 
@@ -45,6 +45,29 @@ impl RedisService {
         let _: () = conn
             .set_ex(key, serde_json::to_string(value)?, expiration as u64)
             .await?;
+        Ok(())
+    }
+
+    pub async fn set_ex_cache_batch<T: serde::Serialize>(
+        &self,
+        entries: &[(String, T)],
+        expiration: usize,
+    ) -> eyre::Result<(), Error> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = self.pool.get().await?;
+        let mut pipe = redis::pipe();
+
+        for (key, value) in entries {
+            pipe.cmd("SETEX")
+                .arg(key)
+                .arg(expiration as u64)
+                .arg(serde_json::to_string(value)?);
+        }
+
+        let _: () = pipe.query_async(&mut *conn).await?;
         Ok(())
     }
 
@@ -113,10 +136,13 @@ impl RedisService {
     }
 
     /// Get cache with Option return (returns None if key doesn't exist)
-    pub async fn get_cache_opt<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>, Error> {
+    pub async fn get_cache_opt<T: serde::de::DeserializeOwned>(
+        &self,
+        key: &str,
+    ) -> Result<Option<T>, Error> {
         let mut conn = self.pool.get().await?;
         let value: Option<String> = conn.get(key).await?;
-        
+
         match value {
             Some(val) => {
                 let cache_value = serde_json::from_str(&val)?;

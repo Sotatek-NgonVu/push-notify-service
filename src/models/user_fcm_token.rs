@@ -1,8 +1,8 @@
 //! main database
 
 use crate::database;
-use crate::errors::Error;
 use crate::enums::UserFcmTokenStatus;
+use crate::errors::Error;
 use crate::utils::models::ModelExt;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

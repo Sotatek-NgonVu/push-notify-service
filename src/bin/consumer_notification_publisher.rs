@@ -1,21 +1,26 @@
 use std::collections::HashMap;
-use std::sync::LazyLock;
-use std::time::Duration;
+use std::sync::{Arc, LazyLock};
+use std::time::{Duration};
 
 use async_trait::async_trait;
+use futures::stream::{self, StreamExt};
 use push_notify_service::common::{DeserializerType, MessageWithOffset};
-use push_notify_service::config::{KafkaConfig, APP_CONFIG};
+use push_notify_service::config::{APP_CONFIG, KafkaConfig};
 use push_notify_service::core::cache::redis_service::RedisService;
-use push_notify_service::core::kafka_service::consumers::streams::{KafkaStreamConsumer, KafkaStreamConsumerExt};
+use push_notify_service::core::kafka_service::consumers::streams::{
+    KafkaStreamConsumer, KafkaStreamConsumerExt,
+};
 use push_notify_service::core::kafka_service::producer::setup_kafka_producer;
 use push_notify_service::enums::KafkaTopic;
+use push_notify_service::errors::Error;
 use push_notify_service::loading_fcm_token::{get_user_fcm_tokens, preload_user_fcm_tokens};
 use push_notify_service::loading_preferences::load_user_notification_preferences;
+use push_notify_service::utils::notification::{
+    NotifKey, NotificationWithTimestamp, group_by_user_id,
+};
 use push_notify_service::utils::structs::{NotifMessage, OrderNotifBuilder};
 use push_notify_service::utils::tracing::init_standard_tracing;
-use push_notify_service::errors::Error;
-use push_notify_service::utils::notification::{group_by_user_id, NotifKey, NotificationWithTimestamp};
-use tokio_retry::{strategy::ExponentialBackoff, Retry};
+use tokio_retry::{Retry, strategy::ExponentialBackoff};
 
 const NOTIFICATION_KEY_PREFIX: &str = "raidenx:notification";
 const RATE_LIMIT_DURATION: usize = 2; // 2 second
@@ -31,6 +36,14 @@ static FCM_CLIENT: LazyLock<fcm_notification::FcmNotification> = LazyLock::new(|
 
 const FCM_RETRY_ATTEMPTS: usize = 3;
 const FCM_RETRY_INITIAL_DELAY_MS: u64 = 100;
+const FCM_SEND_CONCURRENCY: usize = 8;
+
+struct SendJob {
+    token: String,
+    title: Arc<String>,
+    body: Arc<String>,
+    user_id: String,
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -62,10 +75,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("User FCM tokens preloaded successfully.");
     }
 
-    NotificationPublishConsumer::run_single_vec_message(
-        &kafka_config,
-        DeserializerType::RmpSerde,
-    )
+    NotificationPublishConsumer::run_single_vec_message(&kafka_config, DeserializerType::RmpSerde)
         .await?;
 
     Ok(())
@@ -106,9 +116,13 @@ impl KafkaStreamConsumer<NotifMessage> for NotificationPublishConsumer {
     }
 }
 
-async fn process(grouped_notifications: HashMap<NotifKey, Vec<NotificationWithTimestamp>>) -> Result<(), Error> {
+async fn process(
+    grouped_notifications: HashMap<NotifKey, Vec<NotificationWithTimestamp>>,
+) -> Result<(), Error> {
     if grouped_notifications.is_empty() {
-        tracing::info!("No notifications to send (all were skipped due to user preferences), but offset will still be committed");
+        tracing::info!(
+            "No notifications to send (all were skipped due to user preferences), but offset will still be committed"
+        );
         return Ok(());
     }
 
@@ -146,6 +160,8 @@ async fn push_notification_to_firebase(
         return Ok(());
     }
 
+    let mut send_jobs = Vec::new();
+
     for token in tokens {
         let unsent_count = get_unsent_notification_count(token.clone())
             .await
@@ -161,57 +177,13 @@ async fn push_notification_to_firebase(
             } else {
                 (title.clone(), notif.message.clone())
             };
-            
-            let retry_strategy = ExponentialBackoff::from_millis(FCM_RETRY_INITIAL_DELAY_MS)
-                .max_delay(Duration::from_secs(5))
-                .take(FCM_RETRY_ATTEMPTS);
-            
-            let token_clone = token.clone();
-            let title_clone = title_str.clone();
-            let message_clone = message_str.clone();
 
-            let send_result = Retry::spawn(retry_strategy, || {
-                let token = token_clone.clone();
-                let title = title_clone.clone();
-                let message = message_clone.clone();
-                async move {
-                    let notification = fcm_notification::NotificationPayload {
-                        token: token.as_str(),
-                        title: title.as_str(),
-                        body: message.as_str(),
-                        data: None,
-                    };
-                    FCM_CLIENT.send_notification(&notification).await
-                }
-            }).await;
-
-            match send_result {
-                Ok(_) => {
-                    if let Err(e) = update_last_sent(token.clone()).await {
-                        tracing::warn!(
-                            "Failed to update rate limit for user ID {}: {e}",
-                            notif.user_id
-                        );
-                    }
-                    if let Err(e) = reset_unsent_count(token.clone()).await {
-                        tracing::warn!(
-                            "Failed to reset unsent count notification for user ID {}: {e}",
-                            notif.user_id
-                        );
-                    }
-                    tracing::info!("Notification sent successfully for user ID {}", notif.user_id);
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "Failed to send notification to user ID {} after {} retries: {e}",
-                        notif.user_id,
-                        FCM_RETRY_ATTEMPTS
-                    );
-                    // Could add dead letter queue here in the future
-                }
-            }
-
-            tracing::info!("Notification sent for user ID {}", notif.user_id);
+            send_jobs.push(SendJob {
+                token: token.clone(),
+                title: Arc::new(title_str),
+                body: Arc::new(message_str),
+                user_id: notif.user_id.clone(),
+            });
         } else {
             if let Err(e) = increment_unsent_count(token.clone()).await {
                 tracing::warn!(
@@ -226,7 +198,91 @@ async fn push_notification_to_firebase(
         }
     }
 
+    if send_jobs.is_empty() {
+        return Ok(());
+    }
+
+
+    let results = stream::iter(send_jobs.into_iter().map(send_job))
+        .buffer_unordered(FCM_SEND_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await;
+
+    for (user_id, result) in results {
+        if let Err(e) = result {
+            tracing::error!(
+                "Failed to send notification to user ID {} after retries: {}",
+                user_id,
+                e
+            );
+        }
+    }
+
     Ok(())
+}
+
+async fn send_job(job: SendJob) -> (String, Result<(), Error>) {
+    let SendJob {
+        token,
+        title,
+        body,
+        user_id,
+    } = job;
+
+    let retry_strategy = ExponentialBackoff::from_millis(FCM_RETRY_INITIAL_DELAY_MS)
+        .max_delay(Duration::from_secs(5))
+        .take(FCM_RETRY_ATTEMPTS);
+
+    let token_arc = Arc::new(token.clone());
+    let title_arc = Arc::clone(&title);
+    let body_arc = Arc::clone(&body);
+
+    let send_result = Retry::spawn(retry_strategy, {
+        let token_arc = Arc::clone(&token_arc);
+        let title_arc = Arc::clone(&title_arc);
+        let body_arc = Arc::clone(&body_arc);
+        move || {
+            let token = Arc::clone(&token_arc);
+            let title = Arc::clone(&title_arc);
+            let body = Arc::clone(&body_arc);
+            async move {
+                let notification = fcm_notification::NotificationPayload {
+                    token: token.as_str(),
+                    title: title.as_ref(),
+                    body: body.as_ref(),
+                    data: None,
+                };
+                FCM_CLIENT.send_notification(&notification).await
+            }
+        }
+    })
+    .await;
+
+    match send_result {
+        Ok(_) => {
+            if let Err(e) = update_last_sent(token.clone()).await {
+                tracing::warn!("Failed to update rate limit for user ID {}: {e}", user_id);
+            }
+            if let Err(e) = reset_unsent_count(token.clone()).await {
+                tracing::warn!(
+                    "Failed to reset unsent count notification for user ID {}: {e}",
+                    user_id
+                );
+            }
+
+            tracing::info!("Notification sent successfully for user ID {}", user_id);
+            (user_id, Ok(()))
+        }
+        Err(e) => {
+            (
+                user_id,
+                Err(Error::internal_err(&format!(
+                    "FCM send failed after {} retries: {}",
+                    FCM_RETRY_ATTEMPTS, e
+                ))),
+            )
+        }
+    }
 }
 
 async fn can_send_notification(device_token: String) -> bool {

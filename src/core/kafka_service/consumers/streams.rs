@@ -1,18 +1,18 @@
+use crate::common::{DeserializerType, MessageWithOffset};
+use crate::config::KafkaConfig;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use rdkafka::{
-    consumer::{Consumer, StreamConsumer},
     ClientConfig, Message, Offset, TopicPartitionList,
+    consumer::{Consumer, StreamConsumer},
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::{
     fmt::Debug,
     time::{Duration, Instant},
 };
 use tokio::time::timeout;
 use tracing::{error, info};
-use crate::common::{DeserializerType, MessageWithOffset};
-use crate::config::KafkaConfig;
 // ===== Configuration Types =====
 
 #[derive(Debug, Clone, Default)]
@@ -196,9 +196,7 @@ pub fn handle_message_payload<T: DeserializeOwned + Debug>(
     msg: &rdkafka::message::BorrowedMessage,
     handler: &MessageHandler,
 ) -> Result<MessageWithOffset<T>> {
-    let payload = msg
-        .payload()
-        .context("Message payload is empty")?;
+    let payload = msg.payload().context("Message payload is empty")?;
 
     let message: T = handler.deserialize(payload)?;
 
@@ -214,9 +212,7 @@ pub fn handle_vector_message_payload<T: DeserializeOwned + Debug>(
     msg: &rdkafka::message::BorrowedMessage,
     handler: &MessageHandler,
 ) -> Result<MessageWithOffset<Vec<T>>> {
-    let payload = msg
-        .payload()
-        .context("Message payload is empty")?;
+    let payload = msg.payload().context("Message payload is empty")?;
 
     let messages: Vec<T> = handler.deserialize(payload)?;
 

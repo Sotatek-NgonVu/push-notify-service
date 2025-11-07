@@ -1,7 +1,7 @@
 use anyhow::Error;
 use once_cell::sync::OnceCell;
 use redis::{Client, Commands};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use socketio_rust_emitter::Emitter;
 use std::time::Duration;
 use tokio::task;
@@ -80,7 +80,11 @@ impl RedisEmitter {
     pub async fn subscribe<T>(
         &self,
         channel: &str,
-        callback: impl Fn(T) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send>>
+        callback: impl Fn(
+            T,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send>,
+        >
         + Send
         + 'static
         + Clone,
@@ -119,7 +123,7 @@ impl RedisEmitter {
                 }
             }
         })
-            .await??;
+        .await??;
 
         Ok(())
     }

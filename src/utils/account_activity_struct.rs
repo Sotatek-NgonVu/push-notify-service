@@ -100,32 +100,56 @@ impl AccountNotifData {
                 "Your request to {} failed on {}. If you do not recognize this activity, please contact us immediately.",
                 self.activity_type, time
             ),
-            ActionStatus::Success => {
-                match self.activity_type {
-                    AccountNotifType::Kyc(action) => match action {
-                        KycAction::Approved => format!("Your identity verification was approved on {time}."),
-                        KycAction::Upgraded => format!("Your verification level was upgraded on {time}."),
-                    },
-                    AccountNotifType::Whitelisting(action) => match action {
-                        WhitelistingAction::Enabled => format!("Withdrawal address whitelisting was enabled on {time}."),
-                        WhitelistingAction::Disabled => format!("Withdrawal address whitelisting was disabled on {time}."),
-                        WhitelistingAction::Added => format!("A new withdrawal address was added to your whitelist on {time}."),
-                        WhitelistingAction::Removed => format!("A withdrawal address was removed from your whitelist on {time}."),
-                    },
-                    AccountNotifType::Account(action) => match action {
-                        AccountAction::Disabled => format!("Your account was disabled on {time}. If you do not recognize this activity, please contact us immediately."),
-                        AccountAction::Deleted => format!("Your account was permanently deleted on {time}. All data has been removed as requested."),
-                    },
-                    AccountNotifType::Mfa(action) => match action {
-                        MfaAction::Enabled => format!("Two-factor authentication was enabled on {time}."),
-                        MfaAction::Disabled => format!("Two-factor authentication was disabled on {time}. If you do not recognize this activity, please contact us immediately."),
-                    },
-                    AccountNotifType::Password(action) => match action {
-                        PasswordAction::Initialized => format!("Your account password was set up on {time}. Your account is ready to use."),
-                        PasswordAction::Change => format!("Your password was changed on {time}. If you do not recognize this activity, please contact us immediately."),
-                        PasswordAction::Reset => format!("Your password was reset on {time}. If you do not recognize this activity, please contact us immediately."),
-                    },
-                }
+            ActionStatus::Success => match self.activity_type {
+                AccountNotifType::Kyc(action) => match action {
+                    KycAction::Approved => {
+                        format!("Your identity verification was approved on {time}.")
+                    }
+                    KycAction::Upgraded => {
+                        format!("Your verification level was upgraded on {time}.")
+                    }
+                },
+                AccountNotifType::Whitelisting(action) => match action {
+                    WhitelistingAction::Enabled => {
+                        format!("Withdrawal address whitelisting was enabled on {time}.")
+                    }
+                    WhitelistingAction::Disabled => {
+                        format!("Withdrawal address whitelisting was disabled on {time}.")
+                    }
+                    WhitelistingAction::Added => {
+                        format!("A new withdrawal address was added to your whitelist on {time}.")
+                    }
+                    WhitelistingAction::Removed => {
+                        format!("A withdrawal address was removed from your whitelist on {time}.")
+                    }
+                },
+                AccountNotifType::Account(action) => match action {
+                    AccountAction::Disabled => format!(
+                        "Your account was disabled on {time}. If you do not recognize this activity, please contact us immediately."
+                    ),
+                    AccountAction::Deleted => format!(
+                        "Your account was permanently deleted on {time}. All data has been removed as requested."
+                    ),
+                },
+                AccountNotifType::Mfa(action) => match action {
+                    MfaAction::Enabled => {
+                        format!("Two-factor authentication was enabled on {time}.")
+                    }
+                    MfaAction::Disabled => format!(
+                        "Two-factor authentication was disabled on {time}. If you do not recognize this activity, please contact us immediately."
+                    ),
+                },
+                AccountNotifType::Password(action) => match action {
+                    PasswordAction::Initialized => format!(
+                        "Your account password was set up on {time}. Your account is ready to use."
+                    ),
+                    PasswordAction::Change => format!(
+                        "Your password was changed on {time}. If you do not recognize this activity, please contact us immediately."
+                    ),
+                    PasswordAction::Reset => format!(
+                        "Your password was reset on {time}. If you do not recognize this activity, please contact us immediately."
+                    ),
+                },
             },
         }
     }

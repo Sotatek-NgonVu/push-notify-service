@@ -4,13 +4,13 @@ use utoipa::openapi::security::HttpAuthScheme;
 use utoipa::openapi::security::HttpBuilder;
 use utoipa::openapi::security::SecurityScheme;
 
+use crate::enums::UserFcmTokenStatus;
 use crate::routes::notification::dto::{
     EditNotifPreferenceRequestDto, MarkNotificationAsReadResponseDto, NotifPreferenceResponseDto,
     NotificationDto,
 };
 use crate::utils::pagination::PaginationResponseDto;
 use crate::utils::structs::NotificationPreferences;
-use crate::enums::UserFcmTokenStatus;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -27,7 +27,6 @@ use crate::enums::UserFcmTokenStatus;
             NotifPreferenceResponseDto,
             EditNotifPreferenceRequestDto,
             NotificationPreferences,
-            
             PaginationResponseDto<NotificationDto>,
         )
     ),

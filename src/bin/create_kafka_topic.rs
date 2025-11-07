@@ -1,8 +1,8 @@
 use anyhow::Result;
-use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
-use rdkafka::config::ClientConfig;
 use push_notify_service::config::APP_CONFIG;
 use push_notify_service::enums::KafkaTopic;
+use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
+use rdkafka::config::ClientConfig;
 
 fn get_number_of_user_partitions() -> i32 {
     std::env::var("KAFKA_NUMBER_OF_USER_PARTITIONS")
@@ -47,8 +47,8 @@ async fn create_kafka_topics_for_notification() -> Result<()> {
                 get_number_of_user_partitions(),
                 TopicReplication::Fixed(get_kafka_replication_factor()),
             )
-                .set("retention.ms", "2592000000") // 30 days
-                .set("cleanup.policy", "delete")
+            .set("retention.ms", "2592000000") // 30 days
+            .set("cleanup.policy", "delete")
         })
         .collect();
 

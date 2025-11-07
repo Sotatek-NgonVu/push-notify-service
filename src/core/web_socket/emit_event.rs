@@ -1,8 +1,8 @@
+use crate::core::cache::redis_emitter::get_redis_emitter;
+use crate::models::user_notifications::UserNotification;
 use bson::DateTime;
 use bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
-use crate::core::cache::redis_emitter::get_redis_emitter;
-use crate::models::user_notifications::UserNotification;
 
 #[allow(dead_code)]
 #[derive(Serialize, Deserialize)]
@@ -22,9 +22,7 @@ pub struct PubUserNotification {
 }
 
 #[allow(dead_code)]
-pub async fn emit_user_notify(
-    user_notification: UserNotification
-) -> anyhow::Result<()> {
+pub async fn emit_user_notify(user_notification: UserNotification) -> anyhow::Result<()> {
     let redis_emitter = get_redis_emitter();
 
     let pub_notify = PubUserNotification {

@@ -1,9 +1,9 @@
-use std::str::FromStr;
 use serde::{Deserialize, Serialize};
-use strum_macros::{EnumString, VariantNames, Display};
 use std::fmt;
-use utoipa::ToSchema;
 use std::fmt::Display;
+use std::str::FromStr;
+use strum_macros::{Display, EnumString, VariantNames};
+use utoipa::ToSchema;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum EAvailableScope {
@@ -46,7 +46,6 @@ impl FromStr for EAvailableScope {
         }
     }
 }
-
 
 #[derive(
     Debug,

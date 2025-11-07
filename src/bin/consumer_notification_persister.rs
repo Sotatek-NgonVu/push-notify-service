@@ -2,18 +2,22 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use push_notify_service::common::{DeserializerType, MessageWithOffset};
-use push_notify_service::config::{KafkaConfig, APP_CONFIG};
+use push_notify_service::config::{APP_CONFIG, KafkaConfig};
 use push_notify_service::core::cache::redis_emitter::setup_redis_emitter;
-use push_notify_service::core::kafka_service::consumers::streams::{KafkaStreamConsumer, KafkaStreamConsumerExt};
+use push_notify_service::core::kafka_service::consumers::streams::{
+    KafkaStreamConsumer, KafkaStreamConsumerExt,
+};
 use push_notify_service::core::kafka_service::producer::setup_kafka_producer;
 use push_notify_service::enums::KafkaTopic;
+use push_notify_service::errors::Error;
 use push_notify_service::loading_preferences::load_user_notification_preferences;
 use push_notify_service::models::user_notifications::UserNotification;
+use push_notify_service::utils::models::ModelExt;
+use push_notify_service::utils::notification::{
+    NotifKey, NotificationWithTimestamp, group_by_user_id,
+};
 use push_notify_service::utils::structs::{NotifMessage, NotifType};
 use push_notify_service::utils::tracing::init_standard_tracing;
-use push_notify_service::utils::models::ModelExt;
-use push_notify_service::utils::notification::{group_by_user_id, NotifKey, NotificationWithTimestamp};
-use push_notify_service::errors::Error;
 use wither::bson::DateTime;
 
 #[tokio::main]
@@ -81,9 +85,13 @@ impl KafkaStreamConsumer<NotifMessage> for NotificationPersistConsumer {
     }
 }
 
-async fn process(grouped_notifications: HashMap<NotifKey, Vec<NotificationWithTimestamp>>) -> Result<(), Error> {
+async fn process(
+    grouped_notifications: HashMap<NotifKey, Vec<NotificationWithTimestamp>>,
+) -> Result<(), Error> {
     if grouped_notifications.is_empty() {
-        tracing::info!("No notifications to persist (all were skipped due to user preferences), but offset will still be committed");
+        tracing::info!(
+            "No notifications to persist (all were skipped due to user preferences), but offset will still be committed"
+        );
         return Ok(());
     }
 
@@ -95,7 +103,9 @@ async fn process(grouped_notifications: HashMap<NotifKey, Vec<NotificationWithTi
             NotifType::Order => {
                 if let Some(last_notif) = notifications.last() {
                     let chrono_dt = chrono::DateTime::from_timestamp_millis(last_notif.timestamp)
-                        .ok_or_else(|| Error::internal_err(&format!("Invalid timestamp: {}", last_notif.timestamp)))?;
+                        .ok_or_else(|| {
+                        Error::internal_err(&format!("Invalid timestamp: {}", last_notif.timestamp))
+                    })?;
                     let created_at = DateTime::from_chrono(chrono_dt);
 
                     let notification = UserNotification {
@@ -128,8 +138,14 @@ async fn process(grouped_notifications: HashMap<NotifKey, Vec<NotificationWithTi
             }
             NotifType::Transaction | NotifType::Account => {
                 for notif_with_ts in notifications {
-                    let chrono_dt = chrono::DateTime::from_timestamp_millis(notif_with_ts.timestamp)
-                        .ok_or_else(|| Error::internal_err(&format!("Invalid timestamp: {}", notif_with_ts.timestamp)))?;
+                    let chrono_dt =
+                        chrono::DateTime::from_timestamp_millis(notif_with_ts.timestamp)
+                            .ok_or_else(|| {
+                                Error::internal_err(&format!(
+                                    "Invalid timestamp: {}",
+                                    notif_with_ts.timestamp
+                                ))
+                            })?;
                     let created_at = DateTime::from_chrono(chrono_dt);
 
                     let notification = UserNotification {

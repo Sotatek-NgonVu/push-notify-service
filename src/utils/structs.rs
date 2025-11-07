@@ -1,9 +1,9 @@
-use std::fmt::{Display, Formatter};
-use std::str::FromStr;
-use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 use crate::constants::TradingType;
 use crate::utils::account_activity_struct::AccountNotifData;
+use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
+use std::str::FromStr;
+use utoipa::ToSchema;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -75,10 +75,16 @@ impl NotifMetadata {
                         )),
                         TradingType::Sell => Ok(format!(
                             "You have successfully withdraw {amount} {asset} at {time}. If you do not recognize this activity, please contact us immediately."
-                        ))
+                        )),
                     },
-                    "FAILED" => Ok(format!("Your {} transaction of {amount} {asset} failed at {time}.", r#type)),
-                    "REJECTED" => Ok(format!("Your {} transaction of {amount} {asset} failed at {time}.", r#type)),
+                    "FAILED" => Ok(format!(
+                        "Your {} transaction of {amount} {asset} failed at {time}.",
+                        r#type
+                    )),
+                    "REJECTED" => Ok(format!(
+                        "Your {} transaction of {amount} {asset} failed at {time}.",
+                        r#type
+                    )),
                     _ => Err(anyhow::anyhow!(
                         "Skipping notification for transaction with unsupported status: {}",
                         transaction_data.status

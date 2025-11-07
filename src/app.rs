@@ -22,8 +22,7 @@ pub async fn create_app() -> eyre::Result<Router> {
         .nest("/health", routes::health::route::create_route())
         .nest(
             "/api/v1",
-            OpenApiRouter::new()
-                .nest("/notification", routes::notification::route::create_route()),
+            OpenApiRouter::new().nest("/notification", routes::notification::route::create_route()),
         )
         .with_state(app_state)
         .split_for_parts();
