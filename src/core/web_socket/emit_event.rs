@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::cache::redis_emitter::get_redis_emitter;
 use crate::models::user_notifications::UserNotification;
 
+#[allow(dead_code)]
 #[derive(Serialize, Deserialize)]
 pub struct PubUserNotification {
     #[serde(rename = "i")]
@@ -20,6 +21,7 @@ pub struct PubUserNotification {
     pub updated_at: DateTime,
 }
 
+#[allow(dead_code)]
 pub async fn emit_user_notify(
     user_notification: UserNotification
 ) -> anyhow::Result<()> {

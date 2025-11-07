@@ -6,7 +6,7 @@ use tokio::sync::RwLock;
 use crate::core::cache::redis_emitter::get_redis_emitter;
 use crate::errors::Error;
 use crate::models::user_fcm_token::UserFcmToken;
-use crate::routes::account::dtos::requests::UserFcmTokenStatus;
+use crate::enums::UserFcmTokenStatus;
 use crate::utils::models::ModelExt;
 
 static USER_FCM_TOKENS: LazyLock<RwLock<HashMap<String, Vec<String>>>> =

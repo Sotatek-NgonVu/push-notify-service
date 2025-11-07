@@ -35,7 +35,7 @@ pub fn create_route() -> OpenApiRouter<AppState> {
 
 #[utoipa::path(
     patch,
-    path = "/api/v1/notification/read/{id}",
+    path = "/read/{id}",
     tag = "Notification APIs",
     params(
         ("id" = String, Path, description = "Notification ID")
@@ -83,7 +83,7 @@ pub async fn mark_notification_as_read(
 }
 #[utoipa::path(
     patch,
-    path = "/api/v1/notification/transaction",
+    path = "/transaction",
     tag = "Notification APIs",
     responses(
         (status = 200, description = "All transaction notifications marked as read successfully"),
@@ -125,7 +125,7 @@ pub async fn mark_all_transaction_notify_as_read(
 
 #[utoipa::path(
     patch,
-    path = "/api/v1/notification/account",
+    path = "/account",
     tag = "Notification APIs",
     responses(
         (status = 200, description = "All account notifications marked as read successfully"),
@@ -164,7 +164,7 @@ pub async fn mark_all_account_notify_as_read(
 
 #[utoipa::path(
     get,
-    path = "/api/v1/notification/transaction/latest",
+    path = "/transaction/latest",
     tag = "Notification APIs",
     responses(
         (status = 200, description = "Latest unread transaction notification retrieved successfully", body = Option<NotificationDto>),
@@ -217,7 +217,7 @@ pub async fn get_latest_unread_transaction_notification(
 
 #[utoipa::path(
     get,
-    path = "/api/v1/notification/account/latest",
+    path = "/account/latest",
     tag = "Notification APIs",
     responses(
         (status = 200, description = "Latest unread account notification retrieved successfully", body = Option<NotificationDto>),
@@ -270,7 +270,7 @@ pub async fn get_latest_unread_account_notification(
 
 #[utoipa::path(
     get,
-    path = "/api/v1/notification/account",
+    path = "/account",
     tag = "Notification APIs",
     params(PaginationQuery),
     responses(
@@ -331,7 +331,7 @@ pub async fn get_account_notification(
 
 #[utoipa::path(
     get,
-    path = "/api/v1/notification/transaction",
+    path = "/transaction",
     tag = "Notification APIs",
     params(PaginationQuery),
     responses(
@@ -392,7 +392,7 @@ pub async fn get_transaction_notification(
 
 #[utoipa::path(
     patch,
-    path = "/api/v1/notification/preference",
+    path = "/preference",
     tag = "Notification APIs",
     request_body(
         content = EditNotifPreferenceRequestDto,
@@ -447,7 +447,7 @@ pub async fn update_notification_preference(
 
 #[utoipa::path(
     get,
-    path = "/api/v1/notification/preference",
+    path = "/preference",
     tag = "Notification APIs",
     responses(
         (status = 200, description = "Ok", body = NotifPreferenceResponseDto),

@@ -14,6 +14,7 @@ pub struct RedisService {
     pool: ConnectionPool,
 }
 
+#[allow(dead_code)]
 impl RedisService {
     pub async fn new() -> &'static RedisService {
         REDIS_SERVICE
@@ -109,5 +110,19 @@ impl RedisService {
     pub async fn set_rate_limit(&self, ip: &str, count: i32) -> Result<(), Error> {
         let key = format!("rate_limit_request_external_audit:{ip}");
         self.set_ex_cache(&key, &count, 60).await
+    }
+
+    /// Get cache with Option return (returns None if key doesn't exist)
+    pub async fn get_cache_opt<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>, Error> {
+        let mut conn = self.pool.get().await?;
+        let value: Option<String> = conn.get(key).await?;
+        
+        match value {
+            Some(val) => {
+                let cache_value = serde_json::from_str(&val)?;
+                Ok(Some(cache_value))
+            }
+            None => Ok(None),
+        }
     }
 }

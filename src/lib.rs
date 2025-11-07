@@ -9,7 +9,6 @@ pub mod errors;
 pub mod middleware;
 pub mod models;
 pub mod routes;
-pub mod static_service;
 pub mod utils;
 mod constants;
 pub mod loading_preferences;

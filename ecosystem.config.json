@@ -1,0 +1,31 @@
+{
+  "apps": [
+    {
+      "name": "stg.raidenx.push-notify-service",
+      "script": "./target/release/push_notify_service",
+      "namespace": "raidenx.push-notify-service",
+      "instances": 1,
+      "env": {
+        "RUST_LOG": "info"
+      }
+    },
+    {
+      "name": "stg.raidenx.push-notify-service.consumer_notification_persister",
+      "script": "./target/release/consumer_notification_persister",
+      "namespace": "raidenx.push-notify-service",
+      "instances": 1,
+      "env": {
+        "RUST_LOG": "info"
+      }
+    },
+    {
+      "name": "stg.raidenx.push-notify-service.consumer_notification_publisher",
+      "script": "./target/release/consumer_notification_publisher",
+      "namespace": "raidenx.push-notify-service",
+      "instances": 1,
+      "env": {
+        "RUST_LOG": "info"
+      }
+    }
+  ]
+}

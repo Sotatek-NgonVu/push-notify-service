@@ -12,7 +12,7 @@ use push_notify_service::models::user_notifications::UserNotification;
 use push_notify_service::utils::structs::{NotifMessage, NotifType};
 use push_notify_service::utils::tracing::init_standard_tracing;
 use push_notify_service::utils::models::ModelExt;
-use push_notify_service::utils::notification::{group_by_user_id, NotifKey};
+use push_notify_service::utils::notification::{group_by_user_id, NotifKey, NotificationWithTimestamp};
 use push_notify_service::errors::Error;
 use wither::bson::DateTime;
 
@@ -65,18 +65,27 @@ impl KafkaStreamConsumer<NotifMessage> for NotificationPersistConsumer {
             return Ok(());
         }
         tracing::info!("Received {} notifications from Kafka topic", messages.len());
-
-        // Group the notifications by user_id
         let user_notifications = group_by_user_id(messages).await?;
 
+        let total_grouped = user_notifications.values().map(|v| v.len()).sum::<usize>();
+        tracing::info!(
+            "Processing {} grouped notifications for persistence (some may have been skipped due to user preferences)",
+            total_grouped
+        );
+
         process(user_notifications).await?;
+
+        tracing::info!("Batch persistence completed - offset will be committed");
 
         Ok(())
     }
 }
 
-async fn process(grouped_notifications: HashMap<NotifKey, Vec<String>>) -> Result<(), Error> {
-    let now = DateTime::now();
+async fn process(grouped_notifications: HashMap<NotifKey, Vec<NotificationWithTimestamp>>) -> Result<(), Error> {
+    if grouped_notifications.is_empty() {
+        tracing::info!("No notifications to persist (all were skipped due to user preferences), but offset will still be committed");
+        return Ok(());
+    }
 
     for (key, notifications) in grouped_notifications {
         let r#type = key.r#type.to_string();
@@ -84,16 +93,19 @@ async fn process(grouped_notifications: HashMap<NotifKey, Vec<String>>) -> Resul
 
         match key.r#type {
             NotifType::Order => {
-                // For Order notifications, only save the last message
-                if let Some(last_message) = notifications.last() {
+                if let Some(last_notif) = notifications.last() {
+                    let chrono_dt = chrono::DateTime::from_timestamp_millis(last_notif.timestamp)
+                        .ok_or_else(|| Error::internal_err(&format!("Invalid timestamp: {}", last_notif.timestamp)))?;
+                    let created_at = DateTime::from_chrono(chrono_dt);
+
                     let notification = UserNotification {
                         id: None,
                         r#type: r#type.clone(),
                         user_id: key.user_id.clone(),
                         title,
-                        message: last_message.clone(),
-                        created_at: now,
-                        updated_at: now,
+                        message: last_notif.message.clone(),
+                        created_at,
+                        updated_at: created_at,
                         is_read: false,
                     };
 
@@ -115,16 +127,19 @@ async fn process(grouped_notifications: HashMap<NotifKey, Vec<String>>) -> Resul
                 }
             }
             NotifType::Transaction | NotifType::Account => {
-                // For Transaction/Account, save all notifications
-                for message in notifications {
+                for notif_with_ts in notifications {
+                    let chrono_dt = chrono::DateTime::from_timestamp_millis(notif_with_ts.timestamp)
+                        .ok_or_else(|| Error::internal_err(&format!("Invalid timestamp: {}", notif_with_ts.timestamp)))?;
+                    let created_at = DateTime::from_chrono(chrono_dt);
+
                     let notification = UserNotification {
                         id: None,
                         r#type: r#type.clone(),
                         user_id: key.user_id.clone(),
                         title: title.clone(),
-                        message,
-                        created_at: now,
-                        updated_at: now,
+                        message: notif_with_ts.message,
+                        created_at,
+                        updated_at: created_at,
                         is_read: false,
                     };
 

@@ -1,6 +1,9 @@
 use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 use strum_macros::{EnumString, VariantNames, Display};
+use std::fmt;
+use utoipa::ToSchema;
+use std::fmt::Display;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum EAvailableScope {
@@ -65,4 +68,20 @@ pub enum KafkaTopic {
     UserNotificationPersister,
     #[strum(serialize = "raidenx.user.notify.publisher")]
     UserNotificationPublisher,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum UserFcmTokenStatus {
+    Active,
+    Inactive,
+}
+
+impl Display for UserFcmTokenStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UserFcmTokenStatus::Active => write!(f, "ACTIVE"),
+            UserFcmTokenStatus::Inactive => write!(f, "INACTIVE"),
+        }
+    }
 }

@@ -4,17 +4,16 @@ use std::sync::LazyLock;
 use async_trait::async_trait;
 use push_notify_service::common::{DeserializerType, MessageWithOffset};
 use push_notify_service::config::{KafkaConfig, APP_CONFIG};
-use push_notify_service::core::cache::redis_emitter::{get_redis_emitter, setup_redis_emitter};
 use push_notify_service::core::cache::redis_service::RedisService;
 use push_notify_service::core::kafka_service::consumers::streams::{KafkaStreamConsumer, KafkaStreamConsumerExt};
 use push_notify_service::core::kafka_service::producer::setup_kafka_producer;
 use push_notify_service::enums::KafkaTopic;
-use push_notify_service::loading_fcm_token::{get_user_fcm_tokens, preload_user_fcm_tokens, update_fcm_token_in_memory, UpdateFcmToken, UPDATE_FCM_TOKEN_CHANNEL};
+use push_notify_service::loading_fcm_token::{get_user_fcm_tokens, preload_user_fcm_tokens};
 use push_notify_service::loading_preferences::load_user_notification_preferences;
 use push_notify_service::utils::structs::{NotifMessage, OrderNotifBuilder};
 use push_notify_service::utils::tracing::init_standard_tracing;
 use push_notify_service::errors::Error;
-use push_notify_service::utils::notification::{group_by_user_id, NotifKey};
+use push_notify_service::utils::notification::{group_by_user_id, NotifKey, NotificationWithTimestamp};
 
 const NOTIFICATION_KEY_PREFIX: &str = "raidenx:notification";
 const RATE_LIMIT_DURATION: usize = 2; // 2 second
@@ -40,7 +39,6 @@ async fn main() -> anyhow::Result<()> {
     };
 
     setup_kafka_producer(&kafka_config).await?;
-    setup_redis_emitter(&APP_CONFIG.redis_url).await?;
 
     if let Err(e) = load_user_notification_preferences().await {
         tracing::warn!(
@@ -55,20 +53,6 @@ async fn main() -> anyhow::Result<()> {
     } else {
         tracing::info!("User FCM tokens preloaded successfully.");
     }
-
-    // let redis_emitter = get_redis_emitter();
-    // tokio::spawn(async move {
-    //     if let Err(e) = redis_emitter
-    //         .subscribe::<UpdateFcmToken>(&UPDATE_FCM_TOKEN_CHANNEL, move |message| {
-    //             Box::pin(async move { update_fcm_token_in_memory(message).await })
-    //         })
-    //         .await {
-    //         tracing::error!("Failed to subscribe Redis channel: {e}.");
-    //         std::process::exit(1);
-    //     }
-    //
-    //     tracing::info!("Redis channel subscribed successfully.");
-    // });
 
     NotificationPublishConsumer::run_single_vec_message(
         &kafka_config,
@@ -98,21 +82,28 @@ impl KafkaStreamConsumer<NotifMessage> for NotificationPublishConsumer {
         }
 
         tracing::info!("Received {} notifications from Kafka topic", messages.len());
-
-        // Group the notifications by user_id
         let user_notifications = group_by_user_id(messages).await?;
 
-        tracing::info!("Processing {} grouped notifications", user_notifications.len());
+        let total_grouped = user_notifications.values().map(|v| v.len()).sum::<usize>();
+        tracing::info!(
+            "Processing {} grouped notifications (some may have been skipped due to user preferences)",
+            total_grouped
+        );
 
         process(user_notifications).await?;
 
-        tracing::info!("Batch processing completed");
+        tracing::info!("Batch processing completed - offset will be committed");
 
         Ok(())
     }
 }
 
-async fn process(grouped_notifications: HashMap<NotifKey, Vec<String>>) -> Result<(), Error> {
+async fn process(grouped_notifications: HashMap<NotifKey, Vec<NotificationWithTimestamp>>) -> Result<(), Error> {
+    if grouped_notifications.is_empty() {
+        tracing::info!("No notifications to send (all were skipped due to user preferences), but offset will still be committed");
+        return Ok(());
+    }
+
     for (key, notifications) in grouped_notifications {
         let title = key.r#type.construct_title();
 
@@ -120,7 +111,7 @@ async fn process(grouped_notifications: HashMap<NotifKey, Vec<String>>) -> Resul
             .iter()
             .map(|notif| OrderNotifBuilder {
                 user_id: key.user_id.clone(),
-                message: notif.to_string(),
+                message: notif.message.clone(),
             })
             .collect::<Vec<OrderNotifBuilder>>();
 

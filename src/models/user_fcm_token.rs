@@ -2,7 +2,7 @@
 
 use crate::database;
 use crate::errors::Error;
-use crate::routes::account::dtos::requests::UserFcmTokenStatus;
+use crate::enums::UserFcmTokenStatus;
 use crate::utils::models::ModelExt;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
